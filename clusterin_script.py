@@ -1,144 +1,211 @@
+import argparse
 import gc
-from src.save_p_cloud_as_cube import SavePredictionPCloud
-import pandas as pd
-import numpy as np
 import os
-# from src.save_p_cloud_as_cube import SavePredictionPCloud
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-import xarray as xr
-import sklearn.cluster as clust
+from pathlib import Path
+
+import numpy as np
 from sklearn.mixture import GaussianMixture
-# from time import time
+
+from src.save_p_cloud_as_cube import SavePredictionPCloud
 from two_stg_clust import TwoStageClust
 from visualization import save_sec_interest
 
-# def save_section(result_xarr, save_fold, name, sec=2550):
-#     fig, ax = plt.subplots(1)
-#     im1 = ax.scatter(result_xarr.sel({'twt': sec}).cdp_x.data,
-#             result_xarr.sel({'twt': sec}).cdp_y.data,
-#             c=result_xarr.sel({'twt': sec}).data, 
-#             s=mpl.rcParams['lines.markersize']/4,
-#             rasterized=True)
-#     cbar = fig.colorbar(im1)
-#     fig.savefig(os.path.join(save_fold, f'{name}.pdf'))
-#     plt.close()
 
-data_folder = r'C:\Damir\unsupervised_seism_segment_novatek\cubes_as_xarrays\horizon_cubes\p_clouds_dwn2'
+DEFAULT_WEIGHTS = {
+    "cdp_x.npy": 0.25,
+    "cdp_y.npy": 0.25,
+    "twt.npy": 0.5,
+}
 
-def check_weight_names(weights:dict, 
-                       data_folder):
-    for w in weights.keys():
-        assert w in os.listdir(data_folder), f'w_name: {w} is not in data folder'
+CLUST_METHODS = {
+    "gmm3": 3,
+    "gmm4": 4,
+    "gmm5": 5,
+}
 
-weights = {'cdp_x.npy': 0.25,
-           'cdp_y.npy': 0.25,
-           'twt.npy': 0.5}
 
-check_weight_names(weights, data_folder)
+def parse_args():
+    root_dir = Path(__file__).resolve().parent
+    data_dir = root_dir / "data"
+    results_dir = root_dir / "results"
 
-use_spatial = ['all', 'only_twt', 'none']
+    parser = argparse.ArgumentParser(description="Run seismic clustering experiments.")
+    parser.add_argument("--data-folder", default=str(data_dir), help="Folder with .npy features.")
+    parser.add_argument("--bolvanka-path", default=str(data_dir / "bolvanka.nc"), help="Template cube path.")
+    parser.add_argument("--results-dir", default=str(results_dir), help="Output directory for clustering results.")
+    parser.add_argument(
+        "--attrib-config",
+        default="only_geom",
+        choices=["only_spectr", "no_spectr", "all", "only_geom"],
+        help="Feature configuration to use.",
+    )
+    parser.add_argument(
+        "--use-spatial",
+        nargs="+",
+        default=["all", "only_twt", "none"],
+        choices=["all", "only_twt", "none"],
+        help="Spatial feature modes to evaluate.",
+    )
+    parser.add_argument(
+        "--twt-weights",
+        nargs="+",
+        type=float,
+        default=[0.5, 1.0],
+        help="Weights for twt.npy when spatial features are enabled.",
+    )
+    parser.add_argument(
+        "--methods",
+        nargs="+",
+        default=list(CLUST_METHODS.keys()),
+        choices=list(CLUST_METHODS.keys()),
+        help="Clustering methods to run.",
+    )
+    parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random state for GaussianMixture.",
+    )
+    return parser.parse_args()
 
-twt_weights = [0.5, 1]
 
-# attrib_config = ['only_spectr', 'no_spectr', 
-#                  'all', 'only_geom']
-attrib_config = ['only_geom']
+def check_required_files(data_folder: Path, attrib_config: str):
+    required = {
+        "cdp_x.npy",
+        "cdp_y.npy",
+        "twt.npy",
+        "iline.npy",
+        "xline.npy",
+        "bolvanka.nc",
+    }
 
-clust_methods = {
-                'gmm3': 3,
-                 'gmm4': 4,
-                 'gmm5': 5,
-                 
-                 }
-# n_compons = [5, 10, 20, 40]
+    if attrib_config == "only_geom":
+        required.update(
+            {
+                "loc_struct_azim_cos.npy",
+                "loc_struct_azim_sin.npy",
+                "dip_dev.npy",
+                "dip_usual.npy",
+            }
+        )
+    elif attrib_config == "only_spectr":
+        required.update({"2019_15Hz.npy", "2019_30Hz.npy", "2019_45Hz.npy"})
+    else:
+        required.update(
+            {
+                "2019_15Hz.npy",
+                "2019_30Hz.npy",
+                "2019_45Hz.npy",
+                "2019_SUMM.npy",
+                "FF.npy",
+                "offset_0950.npy",
+                "offset_1600.npy",
+                "offset_2500.npy",
+                "offset_ENV1600.npy",
+                "offset_ENV2500.npy",
+                "offset_ENV950.npy",
+            }
+        )
+        if attrib_config == "no_spectr":
+            required.difference_update({"2019_15Hz.npy", "2019_30Hz.npy", "2019_45Hz.npy"})
 
-# save_f = r'C:\Damir\unsupervised_seism_segment_novatek\cubes_as_xarrays\horizon_cubes\cluster_res\gmm_4_less_spat_w'
-bolvanka_path = r'C:\Damir\unsupervised_seism_segment_novatek\cubes_as_xarrays\bolvanka.nc'
-# segment_res_pth = r'C:\Damir\unsupervised_seism_segment_novatek\cubes_as_xarrays\horizon_cubes\cluster_res\gmm_4_clust_less_spat_w.npy'
-iline_path = r'C:\Damir\unsupervised_seism_segment_novatek\cubes_as_xarrays\horizon_cubes\p_clouds_dwn2\iline.npy'
-xline_path = r'C:\Damir\unsupervised_seism_segment_novatek\cubes_as_xarrays\horizon_cubes\p_clouds_dwn2\xline.npy'
-twt_path = r'C:\Damir\unsupervised_seism_segment_novatek\cubes_as_xarrays\horizon_cubes\p_clouds_dwn2\twt.npy'
-res_fold =r'C:\Damir\unsupervised_seism_segment_novatek\cubes_as_xarrays\horizon_cubes\cluster_res\geom_attrs_experim'
+    missing = [name for name in sorted(required) if not (data_folder / name).exists()]
+    if missing:
+        raise FileNotFoundError(f"Missing required data files in {data_folder}: {missing}")
 
-# for us_spat in use_spatial:
-    # for use_only_time:
-        
-# for attr_conf in attrib_config: 
 
-for alg_name, n_comp in clust_methods.items():
-    for us_spat in use_spatial:
-        if us_spat != 'none':
-            for twt_w in twt_weights:
+def run_experiment(
+    data_folder: Path,
+    bolvanka_path: Path,
+    results_dir: Path,
+    alg_name: str,
+    n_comp: int,
+    attrib_config: str,
+    spatial_mode: str,
+    twt_weight: float | None,
+    random_state: int,
+):
+    weights = DEFAULT_WEIGHTS.copy()
+    if twt_weight is not None:
+        weights["twt.npy"] = twt_weight
+
+    if spatial_mode == "none":
+        exp_name = f"{alg_name}_{attrib_config}_no_spat"
+        active_weights = None
+    else:
+        exp_name = f"{alg_name}_{attrib_config}_twt_w_{twt_weight}"
+        if spatial_mode == "all":
+            exp_name += "_0.25xy"
+        active_weights = weights
+
+    print(f"Start fit-predict for {exp_name}")
+    two_stg_clust = TwoStageClust(data_folder=str(data_folder))
+    two_stg_clust.load_features(
+        use_spatial=spatial_mode,
+        attrib_config=attrib_config,
+        weights=active_weights,
+    )
+
+    clust_alg = GaussianMixture(n_components=n_comp, random_state=random_state)
+    result = two_stg_clust.fit_predict(clust_alg, use_kmeans_centr=False)
+
+    save_dir = results_dir / exp_name
+    save_dir.mkdir(parents=True, exist_ok=True)
+    segment_res_path = save_dir / f"{exp_name}.npy"
+    np.save(segment_res_path, result)
+
+    saver = SavePredictionPCloud(
+        str(save_dir),
+        exp_name,
+        str(bolvanka_path),
+        segment_res_path=str(segment_res_path),
+        iline_path=str(data_folder / "iline.npy"),
+        xline_path=str(data_folder / "xline.npy"),
+        twt_path=str(data_folder / "twt.npy"),
+    )
+    saver.save_segy()
+    save_sec_interest(saver.results_xr, str(save_dir))
+    print(f"Finished {exp_name}")
+
+
+def main():
+    args = parse_args()
+    data_folder = Path(args.data_folder).resolve()
+    bolvanka_path = Path(args.bolvanka_path).resolve()
+    results_dir = Path(args.results_dir).resolve()
+
+    if not data_folder.exists():
+        raise FileNotFoundError(f"Data folder does not exist: {data_folder}")
+    if not bolvanka_path.exists():
+        raise FileNotFoundError(f"Bolvanka file does not exist: {bolvanka_path}")
+
+    check_required_files(data_folder, args.attrib_config)
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    for method_name in args.methods:
+        n_comp = CLUST_METHODS[method_name]
+        for spatial_mode in args.use_spatial:
+            weights_to_try = args.twt_weights if spatial_mode != "none" else [None]
+            for twt_weight in weights_to_try:
                 try:
-                    # name = (f'{alg_name}_{attr_conf}_use_spat' if use_spatial[0]
-                            # else f'{alg_name}_{attr_conf}_no_spat')
-                    name = f'{alg_name}_{attrib_config[0]}_twt_w_{twt_w}'
-                    if us_spat == 'all':
-                        name+= '_0.25xy'
-                    print(f'Start fit-predict for {name} alg')
-                    
-                    weights['twt.npy'] = twt_w
-                    two_stg_clust = TwoStageClust(data_folder=data_folder,
-                                                  )
-                    two_stg_clust.load_features(use_spatial=us_spat,
-                                                attrib_config=attrib_config[0],
-                                                weights=weights)
-                    clust_alg = GaussianMixture(n_comp)
-                    res = two_stg_clust.fit_predict(clust_alg,
-                                                    use_kmeans_centr=False)
-                    print(f'End fit-predict for {name} alg')
-
-                    save_f = os.path.join(res_fold, name)
-                    os.mkdir(save_f)
-                    segment_res_path = os.path.join(save_f, f'{name}.npy')
-                    np.save(segment_res_path, res)
-                    saver = SavePredictionPCloud(save_f, name, bolvanka_path,
-                                                segment_res_path=segment_res_path, 
-                                                iline_path=iline_path, 
-                                                xline_path=xline_path,
-                                                twt_path=twt_path)
-                    saver.save_segy()
-                    # saver.save_xarr()
-                    # save_section(saver.results_xr, save_f, name, sec=2568)
-                    save_sec_interest(saver.results_xr, save_f)
-                except (ValueError, RuntimeError, MemoryError, TypeError, AttributeError) as e:
-                    print(f'{name} has error: {e} continue')
-                    continue
+                    run_experiment(
+                        data_folder=data_folder,
+                        bolvanka_path=bolvanka_path,
+                        results_dir=results_dir,
+                        alg_name=method_name,
+                        n_comp=n_comp,
+                        attrib_config=args.attrib_config,
+                        spatial_mode=spatial_mode,
+                        twt_weight=twt_weight,
+                        random_state=args.random_state,
+                    )
+                except (ValueError, RuntimeError, MemoryError, TypeError, AttributeError, FileNotFoundError) as exc:
+                    print(f"Experiment failed for method={method_name}, spatial={spatial_mode}, twt_weight={twt_weight}: {exc}")
                 finally:
                     gc.collect()
-        else:
-            try:
-                    # name = (f'{alg_name}_{attr_conf}_use_spat' if use_spatial[0]
-                            # else f'{alg_name}_{attr_conf}_no_spat')
-                    name = f'{alg_name}_{attrib_config[0]}_no_spat'
-                    
-                    print(f'Start fit-predict for {name} alg')
-                    two_stg_clust = TwoStageClust(data_folder=data_folder,
-                                                  )
-                    two_stg_clust.load_features(use_spatial=us_spat,
-                                                attrib_config=attrib_config[0],
-                                                weights=None)
-                    clust_alg = GaussianMixture(n_comp)
-                    res = two_stg_clust.fit_predict(clust_alg,
-                                                    use_kmeans_centr=False)
-                    print(f'End fit-predict for {name} alg')
 
-                    save_f = os.path.join(res_fold, name)
-                    os.mkdir(save_f)
-                    segment_res_path = os.path.join(save_f, f'{name}.npy')
-                    np.save(segment_res_path, res)
-                    saver = SavePredictionPCloud(save_f, name, bolvanka_path,
-                                                segment_res_path=segment_res_path, 
-                                                iline_path=iline_path, 
-                                                xline_path=xline_path,
-                                                twt_path=twt_path)
-                    saver.save_segy()
-                    # saver.save_xarr()
-                    # save_section(saver.results_xr, save_f, name, sec=2568)
-                    save_sec_interest(saver.results_xr, save_f)
-            except (ValueError, RuntimeError, MemoryError, TypeError, AttributeError) as e:
-                print(f'{name} has error: {e} continue')
-                continue
-            finally:
-                gc.collect()
+
+if __name__ == "__main__":
+    os.environ.setdefault("MPLCONFIGDIR", str(Path(".cache/matplotlib").resolve()))
+    Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
+    main()

@@ -1,7 +1,5 @@
-from sklearn.cluster import MiniBatchKMeans
 import numpy as np
 import os
-from fastkmeans import FastKMeans
 
 class TwoStageClust:
 
@@ -90,7 +88,9 @@ class TwoStageClust:
         self.rooted_alg = rooted_alg
         
         if use_kmeans_centr:
-            print(f'Use two stage clustering with {self.n_initial_cluster} centroids')
+            from fastkmeans import FastKMeans
+
+            print(f'Use two stage clustering with {self.n_initial_clusters} centroids')
             d = self.features.shape[1]
             k_means = FastKMeans(d=d,
                             k=self.n_initial_clusters, use_triton=False
