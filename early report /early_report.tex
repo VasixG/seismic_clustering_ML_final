@@ -1,0 +1,84 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{amsmath}
+
+\title{Early Project Report\\\large Seismic facies clustering using Torque clustering}
+\author{Vasilii Gorelov \and Artem Rubtsov\\[0.5em]\hspace*{-4.5cm}TA: Damir Akhmetov}
+\date{February 25, 2026}
+
+\begin{document}
+\maketitle
+\onehalfspacing
+ 
+
+\section*{Project Goal}
+The goal of this project is to develop, test, and analyze clustering methods for seismic facies segmentation, with the core implementation centered on Torque Clustering and its extensions [7]. The final objective is to obtain robust unsupervised facies maps that are geologically consistent and useful for interpretation workflows.
+
+\section*{Seismic Data}
+In seismic acquisition and processing, each sample can be represented by multiple attributes (amplitude, phase/frequency, geometry, and texture/coherence-like descriptors). Using these multi-attribute vectors, classical clustering methods can already produce useful first-order facies separation.
+
+Our project focuses on multi-attribute clustering where each point (or patch-level feature) is represented in feature space and segmented via graph-based and hierarchical logic.
+
+\section*{Project Plan}
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Baseline implementation and validation}\\
+    Implement and validate Torque Clustering and CNS-based modules on synthetic datasets with full stage-wise visualizations [7,8].
+
+    \item \textbf{Hybrid optimization model}\\
+    Implement an ADMM-based CNS+Torque model, where graph smoothness, prototype reconstruction, edge regularization, and consensus constraints are optimized jointly.
+
+    \item \textbf{Seismic application phase}\\
+    Transfer validated methods to seismic attribute data; compare resulting facies maps to baselines (K-means, fuzzy clustering, and spectral-style pipelines).
+
+    \item \textbf{Evaluation}\\
+    Evaluate stability, spatial continuity, geological plausibility, and sensitivity to hyperparameters.
+\end{enumerate}
+
+\section*{Literature Review}
+\subsection*{Classical and unsupervised facies clustering}
+Seismic facies analysis has a long tradition of attribute-based unsupervised learning. K-means, hierarchical clustering, and fuzzy clustering are common baselines [1,2].
+
+\subsection*{Methods used in this project}
+We use and extend:
+\begin{itemize}[leftmargin=1.2em]
+    \item \textbf{Torque Clustering (TC):} hierarchical connection-based clustering with torque-like scoring and tGap-based cut selection [7].
+    \item \textbf{Clustering by Nonparametric Smoothing (CNS):} nonparametric smoothing-based soft assignment and model selection [8].
+    \item \textbf{New ADMM hybrid:} joint CNS+TC optimization in one objective:
+\end{itemize}
+
+\[
+\min_{P,Z,U,V}\;\alpha\,\mathrm{Tr}(P^\top L P)
++\beta\,\|X-ZU^\top\|_F^2
++\gamma\sum_e c_e\|V_e\|_2
++\lambda\,\|P-Z\|_F^2,
+\quad \text{s.t. } P,Z\in\Delta,\;V=BZ.
+\]
+
+\section*{Expected Outcomes}
+\begin{itemize}[leftmargin=1.2em]
+    \item Reproducible software pipeline for TC, CNS, and ADMM-based hybrid clustering.
+    \item Stage-wise visual diagnostics of optimization and clustering behavior.
+    \item Comparative study on synthetic and seismic-attribute datasets.
+    \item Practical recommendations for method selection by geometry and data regime.
+\end{itemize}
+
+
+\section*{References}
+\begin{enumerate}[leftmargin=1.5em]
+    \item E. Y. Oliveira et al., ``K-means clustering using principal component analysis to automate label organization in multi-attribute seismic facies analysis,'' \emph{Journal of Applied Geophysics}, 2022.
+    \item X. Wang et al., ``Unsupervised seismic facies analysis with spatial constraints using regularized fuzzy c-means,'' \emph{Journal of Geophysics and Engineering}, 2017.
+    \item K. Li et al., ``CONSS: Contrastive Learning Approach for Semi-Supervised Seismic Facies Classification,'' arXiv:2210.04776, 2022.
+    \item G. C. Nwankwo et al., ``Deep semi-supervised learning using generative adversarial networks for automated seismic facies classification of mass transport complex,'' \emph{Computers \& Geosciences}, 2023.
+    \item H. Di and A. Abubakar, ``Automating seismic-well tie via self-supervised learning,'' \emph{Geophysical Prospecting}, 2023.
+    \item J. Zhao et al., ``Intelligent recognition of seismic facies based on contrastive semi-supervised learning,'' \emph{Geophysical Prospecting for Petroleum}, 2024.
+    \item J. Yang and C.-T. Lin, ``Autonomous clustering by fast find of mass and distance peaks,'' \emph{IEEE Transactions on Pattern Analysis and Machine Intelligence}, vol. 47, no. 7, pp. 5336--5349, 2025, doi: 10.1109/TPAMI.2025.3535743.
+    \item D. P. Hofmeyr, ``Clustering by Nonparametric Smoothing,'' arXiv:2503.09134, 2025.
+\end{enumerate}
+
+\end{document}
