@@ -163,7 +163,6 @@ def run_experiment(
         xline_path=str(data_folder / "xline.npy"),
         twt_path=str(data_folder / "twt.npy"),
     )
-    saver.save_segy()
     save_sec_interest(saver.results_xr, str(save_dir))
     print(f"Finished {exp_name}")
 

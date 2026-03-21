@@ -74,19 +74,23 @@ def save_sec_interest(result_xarr, experim_fold,
         plt.close()
         
 
-    needed_secs = {1: {'twt': 2498, 'iline': 5784,
-                       'title': 'Soil slip'},
-                   
-                   2: {'twt': 2568, 'title': 'Fans and channels'},
-                   
-                   3: {'twt': 2608, 'xline': 2693,
-                       'title': 'Soil slip'},
-                   
-                   4: {'twt': 2508, 'title': 'Fans and channels'},
-                   
-                   5: {'twt': 2480, 'iline': 5694,
-                       'title': 'Channels (not certainly)'}
-                       }
+    needed_secs = {
+        1: {'twt': 2480, 'iline': 5694, 'title': 'Channels_A'},
+        2: {'twt': 2498, 'iline': 5784, 'title': 'Soil_slip_A'},
+        3: {'twt': 2508, 'title': 'Fans_channels_A'},
+        4: {'twt': 2528, 'title': 'Transition_2528'},
+        5: {'twt': 2548, 'title': 'Transition_2548'},
+        6: {'twt': 2568, 'title': 'Fans_channels_B'},
+        7: {'twt': 2588, 'title': 'Transition_2588'},
+        8: {'twt': 2608, 'xline': 2693, 'title': 'Soil_slip_B'},
+        9: {'twt': 2628, 'title': 'Deep_2628'},
+        10: {'twt': 2498, 'xline': 2693, 'title': 'Soil_slip_xline_2693_shallow'},
+        11: {'twt': 2568, 'iline': 5784, 'title': 'Soil_slip_iline_5784_mid'},
+        12: {'twt': 2608, 'iline': 5784, 'title': 'Soil_slip_iline_5784_deep'},
+        13: {'twt': 2480, 'xline': 2693, 'title': 'Channels_xline_2693'},
+        14: {'twt': 2508, 'iline': 5694, 'title': 'Channels_iline_5694'},
+        15: {'twt': 2568, 'xline': 2693, 'title': 'Fans_channels_xline_2693'},
+    }
 
     for val in needed_secs.values():
         print(f'start work with val: {val}')
