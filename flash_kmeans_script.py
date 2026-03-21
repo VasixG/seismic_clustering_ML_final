@@ -1,4 +1,5 @@
 import argparse
+import math
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +28,7 @@ def parse_args():
     parser.add_argument("--dtype", default="float16", choices=["float16", "float32"])
     parser.add_argument("--tol", type=float, default=1e-4)
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--no-pad-to-power2", action="store_true")
     return parser.parse_args()
 
 
@@ -44,6 +46,17 @@ def maybe_subsample(features: np.ndarray, sample_size: int, seed: int) -> tuple[
     rng = np.random.default_rng(seed)
     idx = np.sort(rng.choice(n_rows, size=sample_size, replace=False))
     return features[idx], idx
+
+
+def pad_feature_dim_to_power_of_two(features: np.ndarray) -> tuple[np.ndarray, int]:
+    n_features = features.shape[1]
+    target_dim = 1 << math.ceil(math.log2(max(n_features, 1)))
+    if target_dim == n_features:
+        return features, n_features
+
+    padded = np.zeros((features.shape[0], target_dim), dtype=features.dtype)
+    padded[:, :n_features] = features
+    return padded, n_features
 
 
 def main():
@@ -77,6 +90,15 @@ def main():
     )
     features, selected_idx = maybe_subsample(features, args.sample_size, args.seed)
 
+    original_feature_dim = features.shape[1]
+    if not args.no_pad_to_power2:
+        features, _ = pad_feature_dim_to_power_of_two(features)
+        if features.shape[1] != original_feature_dim:
+            print(
+                f"Padded feature dimension from {original_feature_dim} to {features.shape[1]} "
+                "for Triton power-of-two requirement."
+            )
+
     torch_dtype = torch.float16 if args.dtype == "float16" else torch.float32
     x = torch.from_numpy(features).to(device="cuda", dtype=torch_dtype).unsqueeze(0)
 
@@ -101,7 +123,8 @@ def main():
     meta = {
         "run_name": run_name,
         "n_rows": int(features.shape[0]),
-        "n_features": int(features.shape[1]),
+        "n_features": int(original_feature_dim),
+        "n_features_padded": int(features.shape[1]),
         "n_clusters": int(args.n_clusters),
         "feature_names": feature_names,
         "use_spatial": args.use_spatial,
