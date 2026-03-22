@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from two_stg_clust import ATTRIBUTE_FEATURES, TwoStageClust
+from two_stg_clust import ALL_STAGE1_FEATURES, TwoStageClust
 
 
 def parse_args():
@@ -22,7 +22,7 @@ def parse_args():
         default="only_twt",
         choices=["all", "only_twt", "none"],
     )
-    parser.add_argument("--feature-files", nargs="+", default=None, choices=ATTRIBUTE_FEATURES)
+    parser.add_argument("--feature-files", nargs="+", default=None, choices=ALL_STAGE1_FEATURES)
     parser.add_argument("--n-clusters", type=int, default=1000)
     parser.add_argument("--sample-size", type=int, default=0, help="0 means use all rows.")
     parser.add_argument("--seed", type=int, default=42)

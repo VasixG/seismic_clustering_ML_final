@@ -5,7 +5,7 @@ from pathlib import Path
 
 from tqdm.auto import tqdm
 
-from two_stg_clust import ATTRIBUTE_FEATURES
+from two_stg_clust import ALL_STAGE1_FEATURES
 
 
 def parse_args():
@@ -14,8 +14,8 @@ def parse_args():
     parser.add_argument(
         "--features",
         nargs="+",
-        default=ATTRIBUTE_FEATURES,
-        choices=ATTRIBUTE_FEATURES,
+        default=ALL_STAGE1_FEATURES,
+        choices=ALL_STAGE1_FEATURES,
         help="Feature files to combine.",
     )
     parser.add_argument("--min-size", type=int, default=1)

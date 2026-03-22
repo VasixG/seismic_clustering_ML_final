@@ -26,6 +26,7 @@ ATTRIBUTE_FEATURES = [
     'dip_dev.npy',
     'dip_usual.npy',
 ]
+ALL_STAGE1_FEATURES = SPATIAL_FEATURES + ATTRIBUTE_FEATURES
 
 class TwoStageClust:
 
@@ -69,7 +70,7 @@ class TwoStageClust:
             elif use_spatial == 'only_twt':
                 feat_used.append(SPATIAL_FEATURES[-1])
             feat_used.extend(feature_files)
-            return feat_used
+            return list(dict.fromkeys(feat_used))
 
         feat_used = []
         if use_spatial == 'all':

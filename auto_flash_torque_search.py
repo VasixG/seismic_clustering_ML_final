@@ -18,7 +18,7 @@ from fast_kmeans_torque_pipeline import (
 )
 from src.surface_projection_metric import SurfaceProjectionEvaluator
 from torque_clustering.admm_cns_torque_module import admm_cns_torque
-from two_stg_clust import ATTRIBUTE_FEATURES
+from two_stg_clust import ALL_STAGE1_FEATURES, ATTRIBUTE_FEATURES
 
 
 def parse_args():
@@ -49,7 +49,7 @@ def parse_args():
         action="append",
         nargs="+",
         default=None,
-        choices=ATTRIBUTE_FEATURES,
+        choices=ALL_STAGE1_FEATURES,
         help="Explicit stage-1 feature combinations. Repeat the flag for multiple combinations.",
     )
     parser.add_argument(
@@ -279,7 +279,7 @@ def main():
         for combo in combos_from_file:
             if not isinstance(combo, list) or not combo:
                 raise ValueError("Each feature combination must be a non-empty JSON list.")
-            invalid = [feature for feature in combo if feature not in ATTRIBUTE_FEATURES]
+            invalid = [feature for feature in combo if feature not in ALL_STAGE1_FEATURES]
             if invalid:
                 raise ValueError(f"Unknown feature files in combinations file: {invalid}")
             feature_combinations.append(list(combo))
