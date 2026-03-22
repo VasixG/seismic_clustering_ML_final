@@ -75,6 +75,34 @@ def _run_torque(
     )
 
 
+def _best_snapshot_by_surface_ari(
+    result,
+    evaluator: SurfaceProjectionEvaluator,
+    stage1_labels: np.ndarray,
+):
+    best_iteration = None
+    best_labels = None
+    best_score = -np.inf
+    best_surface_map = None
+    per_iteration = {}
+
+    snapshots = result.snapshots if result.snapshots else {result.labels.shape[0]: result.labels}
+    for iteration, center_labels in sorted(snapshots.items()):
+        center_labels = np.asarray(center_labels, dtype=np.int32)
+        score, surface_map = evaluator.score(
+            center_labels=center_labels,
+            stage1_labels=stage1_labels,
+        )
+        per_iteration[int(iteration)] = float(score)
+        if score > best_score:
+            best_score = score
+            best_iteration = int(iteration)
+            best_labels = center_labels
+            best_surface_map = surface_map
+
+    return best_iteration, best_labels, best_score, best_surface_map, per_iteration
+
+
 def main():
     args = parse_args()
     data_folder = Path(args.data_folder).resolve()
@@ -130,11 +158,12 @@ def main():
             max_iter=args.search_max_iter,
             tol=args.tol,
             seed=args.seed,
-            snapshot_every=None,
+            snapshot_every=1,
         )
 
-        score_raw, _ = evaluator.score(
-            center_labels=np.asarray(result.labels, dtype=np.int32),
+        best_iteration, best_labels, score_raw, _, per_iteration_scores = _best_snapshot_by_surface_ari(
+            result=result,
+            evaluator=evaluator,
             stage1_labels=stage1_labels,
         )
         row = {
@@ -146,12 +175,14 @@ def main():
             "metric": "surface_ari",
             "score_for_optimization": score_raw,
             "score_raw": score_raw,
-            "n_unique_labels": int(len(np.unique(result.labels))),
+            "best_iteration": int(best_iteration),
+            "n_unique_labels": int(len(np.unique(best_labels))),
+            "iteration_scores": per_iteration_scores,
         }
         search_results.append(row)
         print(
-            f"  surface_ari={score_raw:.6f}, "
-            f"unique_labels={row['n_unique_labels']}"
+            f"  best_surface_ari={score_raw:.6f}, "
+            f"best_iteration={best_iteration}, unique_labels={row['n_unique_labels']}"
         )
 
         if score_raw > best_score:
@@ -189,6 +220,8 @@ def main():
 
     snapshot_index = {}
     snapshot_surface_ari = {}
+    best_snapshot_name = None
+    best_snapshot_score = -np.inf
     for iteration, center_labels in sorted(best_result.snapshots.items()):
         snapshot_name = f"iter_{int(iteration):03d}"
         center_labels = np.asarray(center_labels, dtype=np.int32)
@@ -220,6 +253,9 @@ def main():
             "surface_map_pdf": str(run_dir / f"{snapshot_name}_surface_ari_map.pdf"),
         }
         snapshot_surface_ari[snapshot_name] = float(snapshot_ari)
+        if snapshot_ari > best_snapshot_score:
+            best_snapshot_score = float(snapshot_ari)
+            best_snapshot_name = snapshot_name
         print(f"Saved snapshot {snapshot_name}")
 
     final_center_labels = np.asarray(best_result.labels, dtype=np.int32)
@@ -242,6 +278,11 @@ def main():
         title=f"Reflecting horizon cluster map, ARI={final_ari:.3f}",
     )
 
+    if best_snapshot_name is not None:
+        best_snapshot_meta = snapshot_index[best_snapshot_name]
+    else:
+        best_snapshot_meta = None
+
     np.save(run_dir / "objective.npy", np.asarray(best_result.objective, dtype=float))
     np.save(run_dir / "objective_aug.npy", np.asarray(best_result.objective_aug, dtype=float))
     np.save(run_dir / "primal_r1.npy", np.asarray(best_result.primal_r1, dtype=float))
@@ -258,6 +299,9 @@ def main():
         "metric": "surface_ari",
         "best": best,
         "final_surface_ari": final_ari,
+        "best_snapshot_name": best_snapshot_name,
+        "best_snapshot_surface_ari": best_snapshot_score,
+        "best_snapshot": best_snapshot_meta,
         "alpha": args.alpha,
         "beta": args.beta,
         "rho1": args.rho1,
