@@ -58,6 +58,9 @@ def _build_knn_graph(
     sigma: float | None = None,
 ) -> Tuple[sparse.csr_matrix, sparse.csr_matrix, np.ndarray, np.ndarray]:
     n = X.shape[0]
+    if n < 2:
+        raise ValueError("kNN graph requires at least 2 points.")
+    n_neighbors = max(1, min(int(n_neighbors), n - 1))
     D = _pairwise_distances(X)
     np.fill_diagonal(D, np.inf)
 
@@ -172,6 +175,15 @@ def admm_cns_torque(
 ) -> ADMMCNSResult:
     X = np.asarray(X, dtype=float)
     n, d = X.shape
+
+    if n < 2:
+        raise ValueError("Torque clustering requires at least 2 points.")
+    if k < 1:
+        raise ValueError("Number of clusters k must be >= 1.")
+    if k > n:
+        k = n
+    if n_neighbors >= n:
+        n_neighbors = max(1, n - 1)
 
     W, L, edge_index, edge_dist = _build_knn_graph(X, n_neighbors=n_neighbors)
     B = _build_incidence(n, edge_index)

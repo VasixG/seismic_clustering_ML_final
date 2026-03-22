@@ -24,11 +24,17 @@ def parse_args():
     parser.add_argument("--max-combinations", type=int, default=0, help="0 means keep all combinations.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-path", default=str(root_dir / "feature_combos.json"))
+    parser.add_argument("--skip-if-exists", action="store_true", help="Do nothing if output file already exists.")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    output_path = Path(args.output_path).resolve()
+    if args.skip_if_exists and output_path.exists():
+        print(f"Feature combinations file already exists: {output_path}")
+        return
+
     if args.min_size < 1:
         raise ValueError("--min-size must be >= 1")
     if args.max_size < args.min_size:
@@ -47,7 +53,6 @@ def main():
         rng = random.Random(args.seed)
         combinations = rng.sample(combinations, args.max_combinations)
 
-    output_path = Path(args.output_path).resolve()
     output_path.write_text(json.dumps(combinations, indent=2), encoding="utf-8")
     print(f"Saved {len(combinations)} feature combinations to {output_path}")
 

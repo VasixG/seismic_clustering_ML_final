@@ -1,6 +1,7 @@
 import argparse
 import gc
 import json
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -47,6 +48,11 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n-trials", type=int, default=100)
     parser.add_argument("--study-name", default="flash_torque_surface_ari")
+    parser.add_argument(
+        "--auto-study-name",
+        action="store_true",
+        help="Append a hash of the search space to study name (avoids Optuna dynamic categorical errors).",
+    )
     parser.add_argument("--storage", default=None, help="Optuna storage URL, e.g. sqlite:///optuna_flash_torque.db")
     parser.add_argument("--sampler-seed", type=int, default=42)
     return parser.parse_args()
@@ -62,6 +68,28 @@ def _discover_run_names(flash_dir: Path, pattern: str) -> list[str]:
         if (flash_dir / f"{run_name}_centers.npy").exists() and (flash_dir / f"{run_name}_row_index.npy").exists():
             run_names.append(run_name)
     return run_names
+
+
+def _hash_search_space(
+    flash_run_names: list[str],
+    torque_k_values: list[int],
+    n_neighbors_values: list[int],
+    gamma_low: float,
+    gamma_high: float,
+    lam_low: float,
+    lam_high: float,
+) -> str:
+    payload = {
+        "flash_run_names": sorted(flash_run_names),
+        "torque_k_values": list(torque_k_values),
+        "n_neighbors_values": list(n_neighbors_values),
+        "gamma_low": float(gamma_low),
+        "gamma_high": float(gamma_high),
+        "lam_low": float(lam_low),
+        "lam_high": float(lam_high),
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha1(blob).hexdigest()[:10]
 
 
 def _save_best_run(
@@ -261,6 +289,7 @@ def main():
 
     cache = {}
     trial_rows = []
+    fail_score = -1e9
 
     def get_stage1(run_name: str):
         if run_name not in cache:
@@ -280,59 +309,91 @@ def main():
         gamma = trial.suggest_float("gamma", args.gamma_low, args.gamma_high)
         lam = trial.suggest_float("lam", args.lam_low, args.lam_high)
 
-        stage1_labels, stage1_centers, centers_trimmed, trimmed_dim = get_stage1(flash_run_name)
-        result = _run_torque(
-            centers=centers_trimmed,
-            torque_k=torque_k,
-            n_neighbors=n_neighbors,
-            alpha=args.alpha,
-            beta=args.beta,
-            gamma=gamma,
-            lam=lam,
-            rho1=args.rho1,
-            rho2=args.rho2,
-            max_iter=args.search_max_iter,
-            tol=args.tol,
-            seed=args.seed,
-            snapshot_every=1,
-        )
-        best_iteration, best_labels, score_raw, _, per_iteration_scores = _best_snapshot_by_surface_ari(
-            result=result,
-            evaluator=evaluator,
-            stage1_labels=stage1_labels,
-        )
-        row = {
-            "trial": int(trial.number),
-            "flash_run_name": flash_run_name,
-            "stage1_n_centers": int(stage1_centers.shape[0]),
-            "stage1_feature_dim": int(stage1_centers.shape[1]),
-            "trimmed_feature_dim": int(trimmed_dim),
-            "torque_k": int(torque_k),
-            "n_neighbors": int(n_neighbors),
-            "gamma": float(gamma),
-            "lam": float(lam),
-            "metric": "surface_ari",
-            "score_for_optimization": float(score_raw),
-            "best_iteration": int(best_iteration),
-            "n_unique_labels": int(len(np.unique(best_labels))),
-            "iteration_scores": per_iteration_scores,
-        }
-        trial_rows.append(row)
-        trial.set_user_attr("result", row)
-        gc.collect()
-        return float(score_raw)
+        try:
+            stage1_labels, stage1_centers, centers_trimmed, trimmed_dim = get_stage1(flash_run_name)
+            result = _run_torque(
+                centers=centers_trimmed,
+                torque_k=torque_k,
+                n_neighbors=n_neighbors,
+                alpha=args.alpha,
+                beta=args.beta,
+                gamma=gamma,
+                lam=lam,
+                rho1=args.rho1,
+                rho2=args.rho2,
+                max_iter=args.search_max_iter,
+                tol=args.tol,
+                seed=args.seed,
+                snapshot_every=1,
+            )
+            best_iteration, best_labels, score_raw, _, per_iteration_scores = _best_snapshot_by_surface_ari(
+                result=result,
+                evaluator=evaluator,
+                stage1_labels=stage1_labels,
+            )
+            row = {
+                "trial": int(trial.number),
+                "flash_run_name": flash_run_name,
+                "stage1_n_centers": int(stage1_centers.shape[0]),
+                "stage1_feature_dim": int(stage1_centers.shape[1]),
+                "trimmed_feature_dim": int(trimmed_dim),
+                "torque_k": int(torque_k),
+                "n_neighbors": int(n_neighbors),
+                "gamma": float(gamma),
+                "lam": float(lam),
+                "metric": "surface_ari",
+                "score_for_optimization": float(score_raw),
+                "best_iteration": int(best_iteration),
+                "n_unique_labels": int(len(np.unique(best_labels))),
+                "iteration_scores": per_iteration_scores,
+            }
+            trial_rows.append(row)
+            trial.set_user_attr("result", row)
+            return float(score_raw)
+        except Exception as exc:
+            msg = f"Trial {trial.number} failed: {exc}"
+            print(msg)
+            row = {
+                "trial": int(trial.number),
+                "flash_run_name": flash_run_name,
+                "torque_k": int(torque_k),
+                "n_neighbors": int(n_neighbors),
+                "gamma": float(gamma),
+                "lam": float(lam),
+                "metric": "surface_ari",
+                "score_for_optimization": float(fail_score),
+                "error": str(exc),
+            }
+            trial_rows.append(row)
+            trial.set_user_attr("result", row)
+            trial.set_user_attr("error", str(exc))
+            return float(fail_score)
+        finally:
+            gc.collect()
 
     sampler = optuna.samplers.TPESampler(seed=args.sampler_seed)
+    study_name = args.study_name
+    if args.auto_study_name:
+        study_name = f"{args.study_name}_{_hash_search_space(
+            flash_run_names,
+            args.torque_k_values,
+            args.n_neighbors_values,
+            args.gamma_low,
+            args.gamma_high,
+            args.lam_low,
+            args.lam_high,
+        )}"
+        print(f"Optuna study name: {study_name}")
     if args.storage:
         study = optuna.create_study(
-            study_name=args.study_name,
+            study_name=study_name,
             storage=args.storage,
             direction="maximize",
             sampler=sampler,
             load_if_exists=True,
         )
     else:
-        study = optuna.create_study(direction="maximize", sampler=sampler, study_name=args.study_name)
+        study = optuna.create_study(direction="maximize", sampler=sampler, study_name=study_name)
 
     study.optimize(objective, n_trials=args.n_trials, show_progress_bar=True)
 
