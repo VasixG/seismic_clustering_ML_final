@@ -1,6 +1,7 @@
 import argparse
 import itertools
 import json
+import random
 from pathlib import Path
 
 from tqdm.auto import tqdm
@@ -20,6 +21,8 @@ def parse_args():
     )
     parser.add_argument("--min-size", type=int, default=1)
     parser.add_argument("--max-size", type=int, default=7)
+    parser.add_argument("--max-combinations", type=int, default=0, help="0 means keep all combinations.")
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-path", default=str(root_dir / "feature_combos.json"))
     return parser.parse_args()
 
@@ -39,6 +42,10 @@ def main():
         unit="size",
     ):
         combinations.extend([list(combo) for combo in itertools.combinations(features, size)])
+
+    if args.max_combinations > 0 and len(combinations) > args.max_combinations:
+        rng = random.Random(args.seed)
+        combinations = rng.sample(combinations, args.max_combinations)
 
     output_path = Path(args.output_path).resolve()
     output_path.write_text(json.dumps(combinations, indent=2), encoding="utf-8")

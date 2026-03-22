@@ -1,6 +1,7 @@
 import argparse
 import itertools
 import json
+import inspect
 from pathlib import Path
 
 import numpy as np
@@ -210,13 +211,19 @@ def _ensure_flash_run(
 
     torch_dtype = torch.float16 if dtype == "float16" else torch.float32
     x = torch.from_numpy(features).to(device="cuda", dtype=torch_dtype).unsqueeze(0)
-    cluster_ids, centers, _ = batch_kmeans_Euclid(
-        x,
-        n_clusters=n_clusters,
-        max_iter=max_iter,
-        tol=tol,
-        verbose=verbose,
-    )
+    kwargs = {
+        "n_clusters": n_clusters,
+        "tol": tol,
+        "verbose": verbose,
+    }
+    try:
+        signature = inspect.signature(batch_kmeans_Euclid)
+        if "max_iter" in signature.parameters:
+            kwargs["max_iter"] = max_iter
+    except (TypeError, ValueError):
+        pass
+
+    cluster_ids, centers, _ = batch_kmeans_Euclid(x, **kwargs)
 
     cluster_ids_np = cluster_ids.squeeze(0).detach().cpu().numpy()
     centers_np = centers.squeeze(0).detach().cpu().numpy()
