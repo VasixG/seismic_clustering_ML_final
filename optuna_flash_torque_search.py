@@ -374,7 +374,7 @@ def main():
     sampler = optuna.samplers.TPESampler(seed=args.sampler_seed)
     study_name = args.study_name
     if args.auto_study_name:
-        study_name = f"{args.study_name}_{_hash_search_space(
+        space_hash = _hash_search_space(
             flash_run_names,
             args.torque_k_values,
             args.n_neighbors_values,
@@ -382,7 +382,8 @@ def main():
             args.gamma_high,
             args.lam_low,
             args.lam_high,
-        )}"
+        )
+        study_name = f"{args.study_name}_{space_hash}"
         print(f"Optuna study name: {study_name}")
     if args.storage:
         study = optuna.create_study(
