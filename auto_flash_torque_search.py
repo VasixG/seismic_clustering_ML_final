@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
+from flash_kmeans_script import build_feature_matrix, maybe_subsample, pad_feature_dim_to_power_of_two
 from fast_kmeans_torque_pipeline import (
     _load_stage1_outputs,
     _save_snapshot_projection,
@@ -21,7 +22,25 @@ def parse_args():
     )
     parser.add_argument("--data-folder", default=str(root_dir / "data"))
     parser.add_argument("--flash-dir", default=str(root_dir / "results" / "flash_kmeans"))
-    parser.add_argument("--flash-run-name", required=True)
+    parser.add_argument("--flash-run-name", default=None)
+    parser.add_argument("--flash-run-names", nargs="+", default=None)
+    parser.add_argument("--flash-k-values", nargs="+", type=int, default=None)
+    parser.add_argument(
+        "--flash-attrib-config-values",
+        nargs="+",
+        default=None,
+        choices=["only_spectr", "no_spectr", "all", "only_geom"],
+    )
+    parser.add_argument(
+        "--flash-use-spatial-values",
+        nargs="+",
+        default=None,
+        choices=["all", "only_twt", "none"],
+    )
+    parser.add_argument("--flash-sample-size", type=int, default=0)
+    parser.add_argument("--flash-dtype", default="float16", choices=["float16", "float32"])
+    parser.add_argument("--flash-tol", type=float, default=1e-4)
+    parser.add_argument("--flash-verbose", action="store_true")
     parser.add_argument("--output-dir", default=str(root_dir / "results" / "flash_torque_auto"))
     parser.add_argument("--bolvanka-path", default=str(root_dir / "data" / "bolvanka.nc"))
     parser.add_argument("--surface-indices-path", default=str(root_dir / "data" / "surface_indices_init_resol.npz"))
@@ -103,6 +122,91 @@ def _best_snapshot_by_surface_ari(
     return best_iteration, best_labels, best_score, best_surface_map, per_iteration
 
 
+def _flash_run_name(n_clusters: int, attrib_config: str, use_spatial: str, n_rows: int) -> str:
+    return f"flashkmeans_k{n_clusters}_{attrib_config}_{use_spatial}_n{n_rows}"
+
+
+def _ensure_flash_run(
+    data_folder: Path,
+    flash_dir: Path,
+    n_clusters: int,
+    attrib_config: str,
+    use_spatial: str,
+    sample_size: int,
+    seed: int,
+    dtype: str,
+    tol: float,
+    verbose: bool,
+) -> str:
+    first_feature_matrix, _ = build_feature_matrix(
+        data_folder=data_folder,
+        attrib_config=attrib_config,
+        use_spatial=use_spatial,
+    )
+    total_rows = first_feature_matrix.shape[0]
+    effective_rows = total_rows if sample_size <= 0 or sample_size >= total_rows else sample_size
+    run_name = _flash_run_name(n_clusters, attrib_config, use_spatial, effective_rows)
+
+    labels_path = flash_dir / f"{run_name}_labels.npy"
+    centers_path = flash_dir / f"{run_name}_centers.npy"
+    row_index_path = flash_dir / f"{run_name}_row_index.npy"
+    if labels_path.exists() and centers_path.exists() and row_index_path.exists():
+        print(f"Reuse existing stage-1 run: {run_name}")
+        return run_name
+
+    try:
+        import torch
+    except Exception as exc:
+        raise RuntimeError("PyTorch is required for Flash-KMeans stage-1 generation.") from exc
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required to generate stage-1 Flash-KMeans runs automatically.")
+
+    try:
+        from flash_kmeans import batch_kmeans_Euclid
+    except Exception as exc:
+        raise RuntimeError("flash-kmeans is not installed or failed to import.") from exc
+
+    features = first_feature_matrix
+    features, selected_idx = maybe_subsample(features, sample_size, seed)
+    original_feature_dim = features.shape[1]
+    features, _ = pad_feature_dim_to_power_of_two(features)
+
+    torch_dtype = torch.float16 if dtype == "float16" else torch.float32
+    x = torch.from_numpy(features).to(device="cuda", dtype=torch_dtype).unsqueeze(0)
+    cluster_ids, centers, _ = batch_kmeans_Euclid(
+        x,
+        n_clusters=n_clusters,
+        tol=tol,
+        verbose=verbose,
+    )
+
+    cluster_ids_np = cluster_ids.squeeze(0).detach().cpu().numpy()
+    centers_np = centers.squeeze(0).detach().cpu().numpy()
+
+    flash_dir.mkdir(parents=True, exist_ok=True)
+    np.save(labels_path, cluster_ids_np)
+    np.save(centers_path, centers_np)
+    np.save(row_index_path, selected_idx)
+
+    meta = {
+        "run_name": run_name,
+        "n_rows": int(features.shape[0]),
+        "n_features": int(original_feature_dim),
+        "n_features_padded": int(features.shape[1]),
+        "n_clusters": int(n_clusters),
+        "use_spatial": use_spatial,
+        "attrib_config": attrib_config,
+        "dtype": dtype,
+    }
+    (flash_dir / f"{run_name}_meta.txt").write_text(
+        "\n".join(f"{k}: {v}" for k, v in meta.items()),
+        encoding="utf-8",
+    )
+    print(f"Created stage-1 run: {run_name}")
+    return run_name
+
+
 def main():
     args = parse_args()
     data_folder = Path(args.data_folder).resolve()
@@ -110,90 +214,124 @@ def main():
     output_root = Path(args.output_dir).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
-    stage1_labels, stage1_centers, _ = _load_stage1_outputs(
-        data_folder=data_folder,
-        flash_dir=flash_dir,
-        run_name=args.flash_run_name,
-    )
     evaluator = SurfaceProjectionEvaluator(
         data_folder=data_folder,
         bolvanka_path=Path(args.bolvanka_path).resolve(),
         surface_indices_path=Path(args.surface_indices_path).resolve(),
         facies_mask_path=Path(args.facies_mask_path).resolve(),
     )
-    centers_trimmed, trimmed_dim = _trim_zero_padding(stage1_centers)
-    print(
-        f"Stage-1 centers loaded: {stage1_centers.shape[0]} centers, "
-        f"feature dim {stage1_centers.shape[1]} -> {trimmed_dim}"
-    )
     print(f"Surface evaluator: {evaluator.describe()}")
 
+    flash_run_names = []
+    if args.flash_run_names:
+        flash_run_names.extend(args.flash_run_names)
+    if args.flash_run_name:
+        flash_run_names.append(args.flash_run_name)
+    if args.flash_k_values and args.flash_attrib_config_values and args.flash_use_spatial_values:
+        for n_clusters, attrib_config, use_spatial in itertools.product(
+            args.flash_k_values,
+            args.flash_attrib_config_values,
+            args.flash_use_spatial_values,
+        ):
+            flash_run_names.append(
+                _ensure_flash_run(
+                    data_folder=data_folder,
+                    flash_dir=flash_dir,
+                    n_clusters=n_clusters,
+                    attrib_config=attrib_config,
+                    use_spatial=use_spatial,
+                    sample_size=args.flash_sample_size,
+                    seed=args.seed,
+                    dtype=args.flash_dtype,
+                    tol=args.flash_tol,
+                    verbose=args.flash_verbose,
+                )
+            )
+    flash_run_names = list(dict.fromkeys(flash_run_names))
+    if not flash_run_names:
+        raise ValueError("Provide --flash-run-name or --flash-run-names.")
+
     search_results = []
-    combo_iter = itertools.product(
+    combo_grid = list(itertools.product(
         args.torque_k_values,
         args.n_neighbors_values,
         args.gamma_values,
         args.lam_values,
-    )
+    ))
 
     best = None
     best_score = -np.inf
     trial_idx = 0
-    for torque_k, n_neighbors, gamma, lam in combo_iter:
-        trial_idx += 1
+    for flash_run_name in flash_run_names:
+        stage1_labels, stage1_centers, _ = _load_stage1_outputs(
+            data_folder=data_folder,
+            flash_dir=flash_dir,
+            run_name=flash_run_name,
+        )
+        centers_trimmed, trimmed_dim = _trim_zero_padding(stage1_centers)
         print(
-            f"Trial {trial_idx}: torque_k={torque_k}, n_neighbors={n_neighbors}, "
-            f"gamma={gamma}, lam={lam}"
+            f"Stage-1 centers loaded for {flash_run_name}: "
+            f"{stage1_centers.shape[0]} centers, feature dim {stage1_centers.shape[1]} -> {trimmed_dim}"
         )
-        result = _run_torque(
-            centers=centers_trimmed,
-            torque_k=torque_k,
-            n_neighbors=n_neighbors,
-            alpha=args.alpha,
-            beta=args.beta,
-            gamma=gamma,
-            lam=lam,
-            rho1=args.rho1,
-            rho2=args.rho2,
-            max_iter=args.search_max_iter,
-            tol=args.tol,
-            seed=args.seed,
-            snapshot_every=1,
-        )
+        for torque_k, n_neighbors, gamma, lam in combo_grid:
+            trial_idx += 1
+            print(
+                f"Trial {trial_idx}: flash_run={flash_run_name}, torque_k={torque_k}, "
+                f"n_neighbors={n_neighbors}, gamma={gamma}, lam={lam}"
+            )
+            result = _run_torque(
+                centers=centers_trimmed,
+                torque_k=torque_k,
+                n_neighbors=n_neighbors,
+                alpha=args.alpha,
+                beta=args.beta,
+                gamma=gamma,
+                lam=lam,
+                rho1=args.rho1,
+                rho2=args.rho2,
+                max_iter=args.search_max_iter,
+                tol=args.tol,
+                seed=args.seed,
+                snapshot_every=1,
+            )
 
-        best_iteration, best_labels, score_raw, _, per_iteration_scores = _best_snapshot_by_surface_ari(
-            result=result,
-            evaluator=evaluator,
-            stage1_labels=stage1_labels,
-        )
-        row = {
-            "trial": trial_idx,
-            "torque_k": torque_k,
-            "n_neighbors": n_neighbors,
-            "gamma": gamma,
-            "lam": lam,
-            "metric": "surface_ari",
-            "score_for_optimization": score_raw,
-            "score_raw": score_raw,
-            "best_iteration": int(best_iteration),
-            "n_unique_labels": int(len(np.unique(best_labels))),
-            "iteration_scores": per_iteration_scores,
-        }
-        search_results.append(row)
-        print(
-            f"  best_surface_ari={score_raw:.6f}, "
-            f"best_iteration={best_iteration}, unique_labels={row['n_unique_labels']}"
-        )
+            best_iteration, best_labels, score_raw, _, per_iteration_scores = _best_snapshot_by_surface_ari(
+                result=result,
+                evaluator=evaluator,
+                stage1_labels=stage1_labels,
+            )
+            row = {
+                "trial": trial_idx,
+                "flash_run_name": flash_run_name,
+                "stage1_n_centers": int(stage1_centers.shape[0]),
+                "stage1_feature_dim": int(stage1_centers.shape[1]),
+                "trimmed_feature_dim": int(trimmed_dim),
+                "torque_k": torque_k,
+                "n_neighbors": n_neighbors,
+                "gamma": gamma,
+                "lam": lam,
+                "metric": "surface_ari",
+                "score_for_optimization": score_raw,
+                "score_raw": score_raw,
+                "best_iteration": int(best_iteration),
+                "n_unique_labels": int(len(np.unique(best_labels))),
+                "iteration_scores": per_iteration_scores,
+            }
+            search_results.append(row)
+            print(
+                f"  best_surface_ari={score_raw:.6f}, "
+                f"best_iteration={best_iteration}, unique_labels={row['n_unique_labels']}"
+            )
 
-        if score_raw > best_score:
-            best_score = score_raw
-            best = row
+            if score_raw > best_score:
+                best_score = score_raw
+                best = row
 
     if best is None:
         raise RuntimeError("No valid clustering configuration found during search.")
 
     run_dir = output_root / (
-        f"{args.flash_run_name}__metric_surface_ari__best_torque_k{best['torque_k']}"
+        f"{best['flash_run_name']}__metric_surface_ari__best_torque_k{best['torque_k']}"
         f"_nn{best['n_neighbors']}_g{best['gamma']}_lam{best['lam']}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -201,6 +339,13 @@ def main():
     (run_dir / "search_results.json").write_text(json.dumps(search_results, indent=2), encoding="utf-8")
     (run_dir / "best_params.json").write_text(json.dumps(best, indent=2), encoding="utf-8")
     print(f"Best params: {best}")
+
+    stage1_labels, stage1_centers, _ = _load_stage1_outputs(
+        data_folder=data_folder,
+        flash_dir=flash_dir,
+        run_name=best["flash_run_name"],
+    )
+    centers_trimmed, trimmed_dim = _trim_zero_padding(stage1_centers)
 
     best_result = _run_torque(
         centers=centers_trimmed,
@@ -279,6 +424,26 @@ def main():
     )
 
     if best_snapshot_name is not None:
+        best_snapshot_labels = np.load(run_dir / f"{best_snapshot_name}_center_labels.npy")
+        best_surface_map = np.load(run_dir / f"{best_snapshot_name}_surface_map.npy")
+        np.save(run_dir / "best_center_labels.npy", best_snapshot_labels)
+        np.save(run_dir / "best_surface_map.npy", best_surface_map)
+        evaluator.save_plot(
+            z_map=best_surface_map,
+            output_path=run_dir / "best_surface_ari_map.pdf",
+            title=f"Best surface snapshot {best_snapshot_name}, ARI={best_snapshot_score:.3f}",
+        )
+        best_full_labels_path = _save_snapshot_projection(
+            output_dir=run_dir,
+            snapshot_name="best",
+            center_labels=np.asarray(best_snapshot_labels, dtype=np.int32),
+            stage1_labels=stage1_labels,
+            data_folder=data_folder,
+        )
+    else:
+        best_full_labels_path = None
+
+    if best_snapshot_name is not None:
         best_snapshot_meta = snapshot_index[best_snapshot_name]
     else:
         best_snapshot_meta = None
@@ -295,13 +460,15 @@ def main():
     )
 
     meta = {
-        "flash_run_name": args.flash_run_name,
+        "flash_run_name": best["flash_run_name"],
+        "flash_run_names_considered": flash_run_names,
         "metric": "surface_ari",
         "best": best,
         "final_surface_ari": final_ari,
         "best_snapshot_name": best_snapshot_name,
         "best_snapshot_surface_ari": best_snapshot_score,
         "best_snapshot": best_snapshot_meta,
+        "best_full_labels_path": str(best_full_labels_path) if best_full_labels_path is not None else None,
         "alpha": args.alpha,
         "beta": args.beta,
         "rho1": args.rho1,
