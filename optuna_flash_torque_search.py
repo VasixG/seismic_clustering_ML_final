@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 
 import numpy as np
+from tqdm.auto import tqdm
 
-from auto_flash_torque_search import _best_snapshot_by_surface_ari, _run_torque
+from auto_flash_torque_search import _best_snapshot_by_surface_ari, _ensure_flash_run, _run_torque
 from fast_kmeans_torque_pipeline import _load_stage1_outputs, _save_snapshot_projection, _trim_zero_padding
 from src.surface_projection_metric import SurfaceProjectionEvaluator
 
@@ -21,6 +22,14 @@ def parse_args():
     parser.add_argument("--facies-mask-path", default=str(root_dir / "data" / "big_polyg_mask_init_resolut.npy"))
     parser.add_argument("--flash-run-names", nargs="+", default=None)
     parser.add_argument("--flash-run-pattern", default="flashkmeans_k*_feat_*_only_twt_n*.npy")
+    parser.add_argument("--combo-file", default=None, help="JSON file with stage-1 feature combinations.")
+    parser.add_argument("--flash-k-values", nargs="+", type=int, default=None)
+    parser.add_argument("--flash-use-spatial", default="only_twt", choices=["all", "only_twt", "none"])
+    parser.add_argument("--flash-sample-size", type=int, default=0)
+    parser.add_argument("--flash-dtype", default="float16", choices=["float16", "float32"])
+    parser.add_argument("--flash-max-iter", type=int, default=50)
+    parser.add_argument("--flash-tol", type=float, default=1e-4)
+    parser.add_argument("--flash-verbose", action="store_true")
     parser.add_argument("--torque-k-values", nargs="+", type=int, required=True)
     parser.add_argument("--n-neighbors-values", nargs="+", type=int, default=[8, 10, 12])
     parser.add_argument("--gamma-low", type=float, default=0.1)
@@ -203,6 +212,41 @@ def main():
         flash_run_names = list(dict.fromkeys(args.flash_run_names))
     else:
         flash_run_names = _discover_run_names(flash_dir, args.flash_run_pattern)
+    if args.combo_file and args.flash_k_values:
+        combo_file = Path(args.combo_file).resolve()
+        combinations = json.loads(combo_file.read_text(encoding="utf-8"))
+        if not isinstance(combinations, list):
+            raise ValueError("--combo-file must contain a JSON list of combinations.")
+        generated_run_names = []
+        total_stage1_runs = len(args.flash_k_values) * len(combinations)
+        stage1_progress = tqdm(total=total_stage1_runs, desc="Stage-1 generation", unit="run")
+        for k in args.flash_k_values:
+            if k < 1 or (k & (k - 1)) != 0:
+                raise ValueError(f"k must be a power of two, got {k}")
+            for combo in combinations:
+                if not isinstance(combo, list) or not combo:
+                    raise ValueError(f"Invalid feature combination: {combo}")
+                stage1_progress.set_postfix({"k": k, "n_feat": len(combo)})
+                generated_run_names.append(
+                    _ensure_flash_run(
+                        data_folder=data_folder,
+                        flash_dir=flash_dir,
+                        n_clusters=k,
+                        attrib_config="all",
+                        use_spatial=args.flash_use_spatial,
+                        feature_files=list(combo),
+                        sample_size=args.flash_sample_size,
+                        seed=args.seed,
+                        dtype=args.flash_dtype,
+                        max_iter=args.flash_max_iter,
+                        tol=args.flash_tol,
+                        verbose=args.flash_verbose,
+                    )
+                )
+                stage1_progress.update(1)
+        stage1_progress.close()
+        flash_run_names.extend(generated_run_names)
+        flash_run_names = list(dict.fromkeys(flash_run_names))
     if not flash_run_names:
         raise ValueError("No stage-1 runs found for Optuna search.")
 
@@ -290,7 +334,7 @@ def main():
     else:
         study = optuna.create_study(direction="maximize", sampler=sampler, study_name=args.study_name)
 
-    study.optimize(objective, n_trials=args.n_trials)
+    study.optimize(objective, n_trials=args.n_trials, show_progress_bar=True)
 
     best_trial_result = study.best_trial.user_attrs["result"]
     study_dir = output_root / f"optuna_{args.study_name}"

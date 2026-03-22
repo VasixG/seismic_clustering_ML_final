@@ -28,6 +28,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--dtype", default="float16", choices=["float16", "float32"])
     parser.add_argument("--tol", type=float, default=1e-4)
+    parser.add_argument("--max-iter", type=int, default=100)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--no-pad-to-power2", action="store_true")
     return parser.parse_args()
@@ -71,7 +72,7 @@ def maybe_subsample(features: np.ndarray, sample_size: int, seed: int) -> tuple[
 
 def pad_feature_dim_to_power_of_two(features: np.ndarray) -> tuple[np.ndarray, int]:
     n_features = features.shape[1]
-    target_dim = 1 << math.ceil(math.log2(max(n_features, 1)))
+    target_dim = max(16, 1 << math.ceil(math.log2(max(n_features, 1))))
     if target_dim == n_features:
         return features, n_features
 
@@ -127,6 +128,7 @@ def main():
     cluster_ids, centers, _ = batch_kmeans_Euclid(
         x,
         n_clusters=args.n_clusters,
+        max_iter=args.max_iter,
         tol=args.tol,
         verbose=args.verbose,
     )
@@ -148,6 +150,7 @@ def main():
         "n_features": int(original_feature_dim),
         "n_features_padded": int(features.shape[1]),
         "n_clusters": int(args.n_clusters),
+        "max_iter": int(args.max_iter),
         "feature_names": feature_names,
         "feature_files": args.feature_files,
         "use_spatial": args.use_spatial,

@@ -3,6 +3,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from tqdm.auto import tqdm
+
 
 def parse_args():
     root_dir = Path(__file__).resolve().parent
@@ -12,6 +14,7 @@ def parse_args():
     parser.add_argument("--use-spatial", default="only_twt", choices=["all", "only_twt", "none"])
     parser.add_argument("--sample-size", type=int, default=0)
     parser.add_argument("--dtype", default="float16", choices=["float16", "float32"])
+    parser.add_argument("--max-iter", type=int, default=50)
     parser.add_argument("--tol", type=float, default=1e-4)
     parser.add_argument("--python-bin", default="python3")
     parser.add_argument("--script-path", default=str(root_dir / "flash_kmeans_script.py"))
@@ -30,6 +33,8 @@ def main():
         if k < 1 or (k & (k - 1)) != 0:
             raise ValueError(f"k must be a power of two, got {k}")
 
+    total_runs = len(args.k_values) * len(combinations)
+    progress = tqdm(total=total_runs, desc="Stage-1 Flash-KMeans runs", unit="run")
     for k in args.k_values:
         for combo in combinations:
             if not isinstance(combo, list) or not combo:
@@ -47,13 +52,18 @@ def main():
                 str(args.sample_size),
                 "--dtype",
                 args.dtype,
+                "--max-iter",
+                str(args.max_iter),
                 "--tol",
                 str(args.tol),
             ]
             if args.verbose:
                 cmd.append("--verbose")
+            progress.set_postfix({"k": k, "n_feat": len(combo)})
             print("RUN:", " ".join(cmd))
             subprocess.run(cmd, check=True)
+            progress.update(1)
+    progress.close()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,8 @@ import itertools
 import json
 from pathlib import Path
 
+from tqdm.auto import tqdm
+
 from two_stg_clust import ATTRIBUTE_FEATURES
 
 
@@ -31,7 +33,11 @@ def main():
 
     features = list(dict.fromkeys(args.features))
     combinations = []
-    for size in range(args.min_size, min(args.max_size, len(features)) + 1):
+    for size in tqdm(
+        range(args.min_size, min(args.max_size, len(features)) + 1),
+        desc="Building feature combinations",
+        unit="size",
+    ):
         combinations.extend([list(combo) for combo in itertools.combinations(features, size)])
 
     output_path = Path(args.output_path).resolve()

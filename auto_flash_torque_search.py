@@ -169,6 +169,7 @@ def _ensure_flash_run(
     sample_size: int,
     seed: int,
     dtype: str,
+    max_iter: int,
     tol: float,
     verbose: bool,
 ) -> str:
@@ -212,6 +213,7 @@ def _ensure_flash_run(
     cluster_ids, centers, _ = batch_kmeans_Euclid(
         x,
         n_clusters=n_clusters,
+        max_iter=max_iter,
         tol=tol,
         verbose=verbose,
     )
@@ -234,6 +236,7 @@ def _ensure_flash_run(
         "attrib_config": attrib_config,
         "feature_files": feature_files,
         "dtype": dtype,
+        "max_iter": int(max_iter),
     }
     (flash_dir / f"{run_name}_meta.txt").write_text(
         "\n".join(f"{k}: {v}" for k, v in meta.items()),
@@ -333,6 +336,7 @@ def main():
                     sample_size=args.flash_sample_size,
                     seed=args.seed,
                     dtype=args.flash_dtype,
+                    max_iter=100,
                     tol=args.flash_tol,
                     verbose=args.flash_verbose,
                 )
