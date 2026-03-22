@@ -1,6 +1,32 @@
 import numpy as np
 import os
 
+SPATIAL_FEATURES = ['cdp_x.npy', 'cdp_y.npy', 'twt.npy']
+GEOM_FEATURES = [
+    'loc_struct_azim_cos.npy',
+    'loc_struct_azim_sin.npy',
+    'dip_dev.npy',
+    'dip_usual.npy',
+]
+SPECTRAL_FEATURES = ['2019_15Hz.npy', '2019_30Hz.npy', '2019_45Hz.npy']
+ATTRIBUTE_FEATURES = [
+    '2019_15Hz.npy',
+    '2019_30Hz.npy',
+    '2019_45Hz.npy',
+    '2019_SUMM.npy',
+    'FF.npy',
+    'offset_0950.npy',
+    'offset_1600.npy',
+    'offset_2500.npy',
+    'offset_ENV1600.npy',
+    'offset_ENV2500.npy',
+    'offset_ENV950.npy',
+    'loc_struct_azim_cos.npy',
+    'loc_struct_azim_sin.npy',
+    'dip_dev.npy',
+    'dip_usual.npy',
+]
+
 class TwoStageClust:
 
     def __init__(self, data_folder,
@@ -12,10 +38,11 @@ class TwoStageClust:
         self.data_folder = data_folder
     
     def load_features(self, use_spatial, attrib_config, 
-                      weights):
+                      weights, feature_files=None):
         
         feat_names = self.take_features(use_spatial, 
-                                        attrib_config
+                                        attrib_config,
+                                        feature_files=feature_files,
                                         )
         print(f'used features: {feat_names}')
         features = []
@@ -34,52 +61,39 @@ class TwoStageClust:
         return (x - x.min()) / (x.max() - x.min())
 
 
-    def take_features(self, use_spatial, attrib_config, 
-                      ):
+    def take_features(self, use_spatial, attrib_config, feature_files=None):
+        if feature_files is not None:
+            feat_used = []
+            if use_spatial == 'all':
+                feat_used.extend(SPATIAL_FEATURES)
+            elif use_spatial == 'only_twt':
+                feat_used.append(SPATIAL_FEATURES[-1])
+            feat_used.extend(feature_files)
+            return feat_used
+
         feat_used = []
-        feat_spat = ['cdp_x.npy', 'cdp_y.npy', 'twt.npy']
-        feat_geom = ['loc_struct_azim_cos.npy',
-                     'loc_struct_azim_sin.npy',
-                     'dip_dev.npy',
-                     'dip_usual.npy']
-        spect_feat = ['2019_15Hz.npy','2019_30Hz.npy',
-                      '2019_45Hz.npy']
-        # geom_attrs = ['']
-        all_attrs = [
-                    '2019_15Hz.npy',
-                    '2019_30Hz.npy',
-                    '2019_45Hz.npy',
-                    '2019_SUMM.npy',
-                    'FF.npy',
-                    'offset_0950.npy',
-                    'offset_1600.npy',
-                    'offset_2500.npy',
-                    'offset_ENV1600.npy',
-                    'offset_ENV2500.npy',
-                    'offset_ENV950.npy',
-                        ]
         if use_spatial == 'all':
-            feat_used.extend(feat_spat)
+            feat_used.extend(SPATIAL_FEATURES)
 
         elif use_spatial=='only_twt':
-            feat_used.append(feat_spat[-1])
+            feat_used.append(SPATIAL_FEATURES[-1])
             # feat_used.remove(feat_spat[0])
             # feat_used.remove(feat_spat[1])
         # else:
 
         if attrib_config == 'only_spectr':
-            feat_used.extend(spect_feat)
+            feat_used.extend(SPECTRAL_FEATURES)
             return feat_used
         elif attrib_config=='no_spectr':
-            feat_used.extend(all_attrs)
-            for sp_f in spect_feat:
+            feat_used.extend(ATTRIBUTE_FEATURES)
+            for sp_f in SPECTRAL_FEATURES:
                 feat_used.remove(sp_f)
             return feat_used
         elif attrib_config=='only_geom':
-            feat_used.extend(feat_geom)
+            feat_used.extend(GEOM_FEATURES)
             return feat_used
         else:
-            feat_used.extend(all_attrs)
+            feat_used.extend(ATTRIBUTE_FEATURES)
             return feat_used
     def take_feat_as_list(self, feat_used):
         return feat_used

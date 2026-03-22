@@ -5,7 +5,12 @@ from pathlib import Path
 
 import numpy as np
 
-from flash_kmeans_script import build_feature_matrix, maybe_subsample, pad_feature_dim_to_power_of_two
+from flash_kmeans_script import (
+    _feature_tag,
+    build_feature_matrix,
+    maybe_subsample,
+    pad_feature_dim_to_power_of_two,
+)
 from fast_kmeans_torque_pipeline import (
     _load_stage1_outputs,
     _save_snapshot_projection,
@@ -13,6 +18,7 @@ from fast_kmeans_torque_pipeline import (
 )
 from src.surface_projection_metric import SurfaceProjectionEvaluator
 from torque_clustering.admm_cns_torque_module import admm_cns_torque
+from two_stg_clust import ATTRIBUTE_FEATURES
 
 
 def parse_args():
@@ -28,9 +34,30 @@ def parse_args():
     parser.add_argument(
         "--flash-attrib-config-values",
         nargs="+",
-        default=None,
+        default=["only_geom", "only_spectr", "no_spectr", "all"],
         choices=["only_spectr", "no_spectr", "all", "only_geom"],
     )
+    parser.add_argument("--flash-skip-attrib-config-grid", action="store_true")
+    parser.add_argument(
+        "--flash-single-feature-values",
+        nargs="+",
+        default=None,
+        choices=ATTRIBUTE_FEATURES,
+    )
+    parser.add_argument(
+        "--flash-feature-combination",
+        action="append",
+        nargs="+",
+        default=None,
+        choices=ATTRIBUTE_FEATURES,
+        help="Explicit stage-1 feature combinations. Repeat the flag for multiple combinations.",
+    )
+    parser.add_argument(
+        "--flash-feature-combinations-file",
+        default=None,
+        help="JSON file with a list of feature combinations, e.g. [[\"dip_dev.npy\", \"FF.npy\"], ...].",
+    )
+    parser.add_argument("--flash-iterate-all-single-features", action="store_true")
     parser.add_argument(
         "--flash-use-spatial-values",
         nargs="+",
@@ -122,8 +149,14 @@ def _best_snapshot_by_surface_ari(
     return best_iteration, best_labels, best_score, best_surface_map, per_iteration
 
 
-def _flash_run_name(n_clusters: int, attrib_config: str, use_spatial: str, n_rows: int) -> str:
-    return f"flashkmeans_k{n_clusters}_{attrib_config}_{use_spatial}_n{n_rows}"
+def _flash_run_name(
+    n_clusters: int,
+    attrib_config: str,
+    use_spatial: str,
+    n_rows: int,
+    feature_files: list[str] | None = None,
+) -> str:
+    return f"flashkmeans_k{n_clusters}_{_feature_tag(feature_files, attrib_config)}_{use_spatial}_n{n_rows}"
 
 
 def _ensure_flash_run(
@@ -132,6 +165,7 @@ def _ensure_flash_run(
     n_clusters: int,
     attrib_config: str,
     use_spatial: str,
+    feature_files: list[str] | None,
     sample_size: int,
     seed: int,
     dtype: str,
@@ -142,10 +176,11 @@ def _ensure_flash_run(
         data_folder=data_folder,
         attrib_config=attrib_config,
         use_spatial=use_spatial,
+        feature_files=feature_files,
     )
     total_rows = first_feature_matrix.shape[0]
     effective_rows = total_rows if sample_size <= 0 or sample_size >= total_rows else sample_size
-    run_name = _flash_run_name(n_clusters, attrib_config, use_spatial, effective_rows)
+    run_name = _flash_run_name(n_clusters, attrib_config, use_spatial, effective_rows, feature_files=feature_files)
 
     labels_path = flash_dir / f"{run_name}_labels.npy"
     centers_path = flash_dir / f"{run_name}_centers.npy"
@@ -197,6 +232,7 @@ def _ensure_flash_run(
         "n_clusters": int(n_clusters),
         "use_spatial": use_spatial,
         "attrib_config": attrib_config,
+        "feature_files": feature_files,
         "dtype": dtype,
     }
     (flash_dir / f"{run_name}_meta.txt").write_text(
@@ -227,12 +263,65 @@ def main():
         flash_run_names.extend(args.flash_run_names)
     if args.flash_run_name:
         flash_run_names.append(args.flash_run_name)
-    if args.flash_k_values and args.flash_attrib_config_values and args.flash_use_spatial_values:
-        for n_clusters, attrib_config, use_spatial in itertools.product(
+    single_feature_values = list(args.flash_single_feature_values or [])
+    if args.flash_iterate_all_single_features:
+        single_feature_values = list(ATTRIBUTE_FEATURES)
+    feature_combinations = []
+    if args.flash_feature_combination:
+        feature_combinations.extend([list(combo) for combo in args.flash_feature_combination])
+    if args.flash_feature_combinations_file:
+        combos_from_file = json.loads(Path(args.flash_feature_combinations_file).read_text(encoding="utf-8"))
+        if not isinstance(combos_from_file, list):
+            raise ValueError("--flash-feature-combinations-file must contain a JSON list.")
+        for combo in combos_from_file:
+            if not isinstance(combo, list) or not combo:
+                raise ValueError("Each feature combination must be a non-empty JSON list.")
+            invalid = [feature for feature in combo if feature not in ATTRIBUTE_FEATURES]
+            if invalid:
+                raise ValueError(f"Unknown feature files in combinations file: {invalid}")
+            feature_combinations.append(list(combo))
+    deduped_combinations = []
+    seen_combinations = set()
+    for combo in feature_combinations:
+        combo_key = tuple(combo)
+        if combo_key in seen_combinations:
+            continue
+        seen_combinations.add(combo_key)
+        deduped_combinations.append(combo)
+    feature_combinations = deduped_combinations
+    if args.flash_k_values and args.flash_use_spatial_values:
+        print(
+            "Stage-1 search grid:",
+            {
+                "flash_k_values": args.flash_k_values,
+                "flash_attrib_config_values": [] if args.flash_skip_attrib_config_grid else args.flash_attrib_config_values,
+                "flash_single_feature_values": single_feature_values,
+                "flash_feature_combinations": feature_combinations,
+                "flash_use_spatial_values": args.flash_use_spatial_values,
+            },
+        )
+        stage1_specs = []
+        if not args.flash_skip_attrib_config_grid:
+            for n_clusters, attrib_config, use_spatial in itertools.product(
+                args.flash_k_values,
+                args.flash_attrib_config_values,
+                args.flash_use_spatial_values,
+            ):
+                stage1_specs.append((n_clusters, attrib_config, use_spatial, None))
+        for n_clusters, feature_file, use_spatial in itertools.product(
             args.flash_k_values,
-            args.flash_attrib_config_values,
+            single_feature_values,
             args.flash_use_spatial_values,
         ):
+            stage1_specs.append((n_clusters, "all", use_spatial, [feature_file]))
+        for n_clusters, feature_files, use_spatial in itertools.product(
+            args.flash_k_values,
+            feature_combinations,
+            args.flash_use_spatial_values,
+        ):
+            stage1_specs.append((n_clusters, "all", use_spatial, list(feature_files)))
+
+        for n_clusters, attrib_config, use_spatial, feature_files in stage1_specs:
             flash_run_names.append(
                 _ensure_flash_run(
                     data_folder=data_folder,
@@ -240,6 +329,7 @@ def main():
                     n_clusters=n_clusters,
                     attrib_config=attrib_config,
                     use_spatial=use_spatial,
+                    feature_files=feature_files,
                     sample_size=args.flash_sample_size,
                     seed=args.seed,
                     dtype=args.flash_dtype,

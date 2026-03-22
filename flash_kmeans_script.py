@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from two_stg_clust import TwoStageClust
+from two_stg_clust import ATTRIBUTE_FEATURES, TwoStageClust
 
 
 def parse_args():
@@ -22,6 +22,7 @@ def parse_args():
         default="only_twt",
         choices=["all", "only_twt", "none"],
     )
+    parser.add_argument("--feature-files", nargs="+", default=None, choices=ATTRIBUTE_FEATURES)
     parser.add_argument("--n-clusters", type=int, default=1000)
     parser.add_argument("--sample-size", type=int, default=0, help="0 means use all rows.")
     parser.add_argument("--seed", type=int, default=42)
@@ -32,10 +33,30 @@ def parse_args():
     return parser.parse_args()
 
 
-def build_feature_matrix(data_folder: Path, attrib_config: str, use_spatial: str) -> tuple[np.ndarray, list[str]]:
+def _feature_tag(feature_files: list[str] | None, attrib_config: str) -> str:
+    if not feature_files:
+        return attrib_config
+    stems = [Path(name).stem for name in feature_files]
+    return "feat_" + "__".join(stems)
+
+
+def build_feature_matrix(
+    data_folder: Path,
+    attrib_config: str,
+    use_spatial: str,
+    feature_files: list[str] | None = None,
+) -> tuple[np.ndarray, list[str]]:
     loader = TwoStageClust(data_folder=str(data_folder))
-    loader.load_features(use_spatial=use_spatial, attrib_config=attrib_config, weights=None)
-    return loader.features.astype(np.float32, copy=False), loader.take_features(use_spatial, attrib_config)
+    loader.load_features(
+        use_spatial=use_spatial,
+        attrib_config=attrib_config,
+        weights=None,
+        feature_files=feature_files,
+    )
+    return (
+        loader.features.astype(np.float32, copy=False),
+        loader.take_features(use_spatial, attrib_config, feature_files=feature_files),
+    )
 
 
 def maybe_subsample(features: np.ndarray, sample_size: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
@@ -87,6 +108,7 @@ def main():
         data_folder=data_folder,
         attrib_config=args.attrib_config,
         use_spatial=args.use_spatial,
+        feature_files=args.feature_files,
     )
     features, selected_idx = maybe_subsample(features, args.sample_size, args.seed)
 
@@ -114,7 +136,7 @@ def main():
 
     run_name = (
         f"flashkmeans_k{args.n_clusters}_"
-        f"{args.attrib_config}_{args.use_spatial}_n{features.shape[0]}"
+        f"{_feature_tag(args.feature_files, args.attrib_config)}_{args.use_spatial}_n{features.shape[0]}"
     )
     np.save(output_dir / f"{run_name}_labels.npy", cluster_ids_np)
     np.save(output_dir / f"{run_name}_centers.npy", centers_np)
@@ -127,6 +149,7 @@ def main():
         "n_features_padded": int(features.shape[1]),
         "n_clusters": int(args.n_clusters),
         "feature_names": feature_names,
+        "feature_files": args.feature_files,
         "use_spatial": args.use_spatial,
         "attrib_config": args.attrib_config,
         "dtype": args.dtype,
