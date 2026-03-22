@@ -1,0 +1,134 @@
+sweep_name: ae3d_intersect_small
+optuna_loss: 
+  - MSE
+direction:
+  - maximize
+data_paths:
+  cubes_fold: ../../data/full_size_npy
+  presence_mask: 'only_target_res_mask.npy'
+  attrib_names:
+    - Consistent_Azimuth_cos.npy
+    - Consistent_Azimuth_sin.npy
+    - x_cube.npy
+    - y_cube.npy
+    - twt_corr.npy
+  twt_file: 'twt_corr.npy'
+  cdp_x_file: 'x_cube.npy'
+  cdp_y_file: 'y_cube.npy'
+  top_surface: ../../data/surfaces/upper_surf.csv
+  bot_surface: ../../data/surfaces/lower_surf.csv
+  down_cube_templ: ../../data/downsamp_cubes_4times/Cube_2019_30Hz_horzn_down.nc 
+  full_cube_templ: ../../data/full_size_cubes/bolvanka_head_init_resol.nc
+  index_map: ../../data/full_size_cubes/surface_indices.npz
+  surface_points: ../../data/reflecting_horizon.csv
+  facies_mask: ../../data/full_size_cubes/big_polyg_mask_init_resolut.npy
+  surf_data_plot: ../../data/surf_data_to_plot
+  
+experim_folder: ../../results/no_overlap_3d
+save_segy_cube: true
+save_np_cube: true
+use_pool_enc: true
+sweep_num: 8
+
+epochs: 5
+use_lazy_load: true
+normalize_strat: min_max
+fixed_attrs: false
+diff_attrs_path: ../configs/ae3d_charact_attrs.yaml
+min_mask_ratio: 0.9
+intersect: true
+stride:
+  - 11
+  - 11
+  - 3
+inference_stride:
+  - 4
+  - 4
+  - 2
+train_test_ratio: 0.8
+train_bs: 256
+inference_bs: 2048
+dt: 3
+dxy: 17
+latent_dim: 16
+dropout: 0.05
+base_filts: 32
+es_tolerance: 10
+w_decay: 0.0001
+lr: 5e-04
+
+seed: 228
+cluster_num:
+  - 6
+  - 8
+  - 10
+sampling_strategy: TPESampler
+cross_section:
+  name: xline
+  val: 1465
+
+use_predefined_ind: false
+tags:
+  - vae
+  - small_facies_inside_big
+  - only_angle_twt
+  - less_min_bits
+
+dec_conv_layers: 4
+dec_dropout: 0.15
+enc_conv_layers: 5
+warmup_epochs: 1
+
+parameters:
+  template:
+    name: template
+    values:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 6
+  # latent_dim: 
+  #   name: latent_dim
+  #   values:
+  #     # - 8
+  #     - 16
+  use_twt: 
+    name: use_twt
+    values:
+    - 0
+    - 1
+  # dxy: 
+  #   name: dxy
+  #   values:
+  #     - 17
+  #     - 21
+  # dt: 
+  #   name: dt
+  #   values:
+  #     - 5
+  #     - 9
+  # # warmup_epochs: 
+  #   name: warmup_epochs
+  #   values:
+  #     - 10
+  #     - 15
+  #     - 20
+  # base_filts:
+  #   name: base_filts
+  #   values:
+  #     - 24
+  #     - 64
+  # enc_conv_layers: 
+  #     name: enc_conv_layers
+  #     values:
+  #     - 5
+  #     - 6
+  # dec_conv_layers: 
+  #     name: dec_conv_layers
+  #     values:
+  #     - 4
+  #     - 5
+  #     - 6
+
+device: 'cuda'

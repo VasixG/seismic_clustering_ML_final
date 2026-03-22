@@ -1,0 +1,7 @@
+*pycache*
+*.ipynb_checkpoints
+debug_noteb.ipynb
+err*
+out*
+job*
+.neptune

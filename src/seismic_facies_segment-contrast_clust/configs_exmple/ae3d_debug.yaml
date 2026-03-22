@@ -1,0 +1,68 @@
+sweep_name: ae3d_intersec_deb
+optuna_loss: 
+  - MSE
+direction:
+  - minimize
+data_paths:
+  cubes_fold: ../../data/coarsen_cubes
+  presence_mask: 'only_tar_res_mask_dwn4.npy'
+  attrib_names:
+    - Cube_2019_SUMM_horzn_down.npy
+    - Cube_2019_15Hz_horzn_down.npy
+    # - Cube_2019_30Hz_horzn.npy
+    # - Cube_2019_45Hz_horzn.npy
+  top_surface: ../../data/surfaces/upper_surf.csv
+  bot_surface: ../../data/surfaces/lower_surf.csv
+
+experim_folder: ../../results/no_overlap_3d
+
+sweep_num: 1
+epochs: 1
+
+intersect: false
+stride:
+  - 5
+  - 5
+  - 3
+use_lazy_load: true
+normalize_strat: min_max
+min_mask_ratio: 0.8
+
+train_test_ratio: 0.8
+train_bs: 64
+inference_bs: 512
+dt: 10
+dxy: 33
+laten_vec_size: 16
+dropout: 0.05
+base_filts: 6
+es_tolerance: 30
+w_decay: 0.0001
+lr: 5e-04
+
+seed: 228
+cluster_num: 5
+sampling_strategy: BruteForceSampler
+# model: only_1d_cs
+
+use_predefined_ind: false
+tags:
+  - vae
+  - small_facies
+  - intersect
+
+dec_conv_layers: 4
+dec_dropout: 0.18
+enc_conv_layers: 4
+warmup_epochs: 1
+
+parameters:
+  template:
+    name: template
+    values:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 6
+device: 'cuda'

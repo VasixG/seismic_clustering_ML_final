@@ -1,0 +1,32 @@
+0:
+  - AVO_grad.npy
+  - AVO_intercept.npy
+  - chaos.npy
+  - var.npy
+  - big_facies_categoric.npy
+
+1:
+  - instant_phase.npy
+  - Cube_2019_SUMM_horzn.npy
+  - big_facies_categoric.npy
+  
+2:
+  - Cube_2019_15Hz_horzn.npy
+  - Cube_2019_30Hz_horzn.npy
+  - Cube_2019_45Hz_horzn.npy
+  - big_facies_categoric.npy
+
+3:
+  - AVO_grad.npy
+  - AVO_intercept.npy
+  - AVO_intercept_x_grad.npy
+  - big_facies_categoric.npy
+
+4:
+  - chaos.npy
+  - var.npy
+  - Cube_2019_SUMM_horzn.npy
+  - big_facies_categoric.npy
+
+
+  
