@@ -205,6 +205,4 @@ def main():
 
 
 if __name__ == "__main__":
-    os.environ.setdefault("MPLCONFIGDIR", str(Path(".cache/matplotlib").resolve()))
-    Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
     main()

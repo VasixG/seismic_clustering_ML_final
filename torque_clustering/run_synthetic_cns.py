@@ -5,7 +5,6 @@ from pathlib import Path
 
 import matplotlib
 
-os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache")
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
