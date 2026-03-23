@@ -1,0 +1,24 @@
+{
+  "trial": 27,
+  "flash_run_name": "flashkmeans_k16_feat_2019_30Hz__offset_ENV2500__dip_usual__twt__cdp_x_none_n38601904",
+  "stage1_n_centers": 16,
+  "stage1_feature_dim": 16,
+  "trimmed_feature_dim": 5,
+  "torque_k": 64,
+  "n_neighbors": 12,
+  "gamma": 0.201655078525588,
+  "lam": 0.541307617219329,
+  "metric": "surface_ari",
+  "score_for_optimization": 0.8513910140097524,
+  "best_iteration": 6,
+  "n_unique_labels": 2,
+  "iteration_scores": {
+    "0": 0.26294761638499303,
+    "1": 0.8458513579195723,
+    "2": 0.6735037775278491,
+    "3": 0.7487317480915668,
+    "4": 0.7487317480915668,
+    "5": 0.7487317480915668,
+    "6": 0.8513910140097524
+  }
+}

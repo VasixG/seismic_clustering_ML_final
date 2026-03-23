@@ -1,5 +1,6 @@
 import argparse
 import math
+import inspect
 from pathlib import Path
 
 import numpy as np
@@ -125,13 +126,19 @@ def main():
     torch_dtype = torch.float16 if args.dtype == "float16" else torch.float32
     x = torch.from_numpy(features).to(device="cuda", dtype=torch_dtype).unsqueeze(0)
 
-    cluster_ids, centers, _ = batch_kmeans_Euclid(
-        x,
-        n_clusters=args.n_clusters,
-        max_iter=args.max_iter,
-        tol=args.tol,
-        verbose=args.verbose,
-    )
+    kwargs = {
+        "n_clusters": args.n_clusters,
+        "tol": args.tol,
+        "verbose": args.verbose,
+    }
+    try:
+        signature = inspect.signature(batch_kmeans_Euclid)
+        if "max_iter" in signature.parameters:
+            kwargs["max_iter"] = args.max_iter
+    except (TypeError, ValueError):
+        pass
+
+    cluster_ids, centers, _ = batch_kmeans_Euclid(x, **kwargs)
 
     cluster_ids_np = cluster_ids.squeeze(0).detach().cpu().numpy()
     centers_np = centers.squeeze(0).detach().cpu().numpy()
