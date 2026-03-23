@@ -1,0 +1,15 @@
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners, minimum height=0.8cm, minimum width=2.6cm, align=center},
+    arrow/.style={->, thick}
+]
+\node[box] (data) {Point Cloud\\(N $\approx$ 38.6M)};
+\node[box, right=1.6cm of data] (kmeans) {Flash-KMeans\\(K centers)};
+\node[box, right=1.6cm of kmeans] (torque) {Torque\\Clustering};
+\node[box, right=1.6cm of torque] (proj) {Projection\\to full data};
+\node[box, below=1.2cm of torque] (surface) {Surface ARI\\(Horizon)};
+
+\draw[arrow] (data) -- (kmeans);
+\draw[arrow] (kmeans) -- (torque);
+\draw[arrow] (torque) -- (proj);
+\draw[arrow] (torque) -- (surface);
+\end{tikzpicture}

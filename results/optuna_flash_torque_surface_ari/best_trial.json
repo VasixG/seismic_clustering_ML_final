@@ -1,0 +1,24 @@
+{
+  "trial": 101,
+  "flash_run_name": "flashkmeans_k32_feat_cdp_x__twt__2019_30Hz__FF__offset_2500_none_n38601904",
+  "stage1_n_centers": 32,
+  "stage1_feature_dim": 16,
+  "trimmed_feature_dim": 5,
+  "torque_k": 8,
+  "n_neighbors": 10,
+  "gamma": 0.2858173257150745,
+  "lam": 1.025331449627815,
+  "metric": "surface_ari",
+  "score_for_optimization": 0.8645897445363301,
+  "best_iteration": 6,
+  "n_unique_labels": 3,
+  "iteration_scores": {
+    "0": 0.48838363675985563,
+    "1": 0.5649514251018526,
+    "2": 0.756531327187106,
+    "3": 0.4957512560271185,
+    "4": 0.29598349185079986,
+    "5": 0.2399386672016866,
+    "6": 0.8645897445363301
+  }
+}

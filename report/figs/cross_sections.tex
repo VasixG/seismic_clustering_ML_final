@@ -1,0 +1,20 @@
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.9\linewidth,
+    height=0.6\linewidth,
+    title={Cross-section (illustrative)},
+    xlabel={Inline},
+    ylabel={TWT},
+    ticks=none,
+]
+\addplot+[smooth, thick, blue] coordinates {
+    (0,0.2) (1,0.25) (2,0.22) (3,0.3) (4,0.28) (5,0.35) (6,0.33) (7,0.38)
+};
+\addplot+[smooth, thick, red] coordinates {
+    (0,0.5) (1,0.55) (2,0.52) (3,0.6) (4,0.58) (5,0.65) (6,0.63) (7,0.68)
+};
+\addplot+[smooth, thick, green!50!black] coordinates {
+    (0,0.8) (1,0.78) (2,0.82) (3,0.79) (4,0.84) (5,0.81) (6,0.86) (7,0.83)
+};
+\end{axis}
+\end{tikzpicture}

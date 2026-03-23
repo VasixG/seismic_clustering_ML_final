@@ -1,0 +1,45 @@
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.9\linewidth,
+    height=0.6\linewidth,
+    xlabel={$x$},
+    ylabel={$y$},
+    title={Synthetic clusters (illustrative)},
+    legend style={at={(0.02,0.98)},anchor=north west,font=\small},
+    axis lines=left,
+    ticks=none,
+]
+\addplot+[only marks, mark=*, mark size=1.2pt, blue] table {
+-2 -1
+-1.8 -1.2
+-2.2 -0.8
+-1.7 -0.7
+-2.1 -1.4
+-1.9 -0.9
+-2.3 -1.1
+};
+\addlegendentry{Cluster A}
+
+\addplot+[only marks, mark=*, mark size=1.2pt, red] table {
+2 1
+1.8 1.2
+2.2 0.8
+1.7 0.7
+2.1 1.4
+1.9 0.9
+2.3 1.1
+};
+\addlegendentry{Cluster B}
+
+\addplot+[only marks, mark=*, mark size=1.2pt, green!50!black] table {
+0 2
+0.2 1.8
+-0.2 2.1
+0.1 2.3
+-0.1 1.7
+0.3 2.2
+-0.3 1.9
+};
+\addlegendentry{Cluster C}
+\end{axis}
+\end{tikzpicture}

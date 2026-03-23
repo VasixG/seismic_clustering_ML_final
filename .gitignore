@@ -5,7 +5,7 @@ __pycache__/
 data/
 # C extensions
 *.so
-
+cross_secs/
 # Distribution / packaging
 .Python
 build/
